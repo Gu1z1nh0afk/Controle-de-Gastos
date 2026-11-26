@@ -14,9 +14,9 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: 17}
       - run: mkdir www && cp index.html www/index.html
-      - run: npm install
+      - run: npm install --legacy-peer-deps
       - run: npx cap add android
-      - run: npx capacitor-assets generate --android --iconBackgroundColor '#0f1115' --iconBackgroundColorDark '#0f1115'
+      - run: npx capacitor-assets generate --android --iconBackgroundColor '#0f1115' --iconBackgroundColorDark '#0f1115' --splashBackgroundColor '#0f1115' --splashBackgroundColorDark '#0f1115'
         continue-on-error: true
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
