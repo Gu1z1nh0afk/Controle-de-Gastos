@@ -253,6 +253,7 @@ input[type=password]:focus{border-color:var(--s1);outline:none}
 body.hv .dv input[type=number]{filter:blur(6px)}
 @media (max-width:480px){.dvf{grid-template-columns:repeat(2,minmax(0,1fr))}.dgrid{grid-template-columns:minmax(0,1fr)}#lock form{flex-direction:column}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.bk{margin-top:18px;padding-top:14px;border-top:1px solid rgba(128,128,128,.25)}.bk .sub{margin:0 0 8px}
 </style>
 
 <div class="wrap">
@@ -925,7 +926,7 @@ function profForm(p){
    <label>${edit&&p.pin?'Nova senha (deixe em branco para manter)':'Senha (opcional)'}<input type="password" id="pmPw" autocomplete="new-password" placeholder="Mínimo de 4 caracteres"></label>
    <label>Missão (opcional)<input type="text" id="pmMis" value="${esc(p?p.missao||'':'')}" placeholder="Ex.: Quitar o apartamento" maxlength="60"></label>
    <label class="chk"><input type="checkbox" id="pmSer" ${p&&p.serasa?'checked':''}>Usar a Operação Serasa neste perfil</label>
-   <div class="row2"><button class="addbtn" type="submit">${edit?'Salvar':'Criar perfil'}</button>${PR.length?'<button class="btn" type="button" id="pmCancel">Fechar</button>':''}${edit&&p.pin?'<button class="btn" type="button" id="pmNoPin">Remover senha</button>':''}${edit?'<button class="btn" type="button" id="pmDel">Excluir perfil</button>':''}</div></form>`;
+   <div class="row2"><button class="addbtn" type="submit">${edit?'Salvar':'Criar perfil'}</button>${PR.length?'<button class="btn" type="button" id="pmCancel">Fechar</button>':''}${edit&&p.pin?'<button class="btn" type="button" id="pmNoPin">Remover senha</button>':''}${edit?'<button class="btn" type="button" id="pmDel">Excluir perfil</button>':''}</div></form>${bkHtml()}`;
 }
 let gateSig='';
 function renderGate(g){
@@ -1004,6 +1005,60 @@ document.addEventListener('click',async e=>{
   if(b.id==='forgot'){$('#forgotBox').innerHTML='<p class="sub">Isto apaga todos os dados deste perfil. Digite o nome do perfil para confirmar.</p><div class="row2"><input type="text" id="forgotName" aria-label="Nome do perfil"><button class="btn warn" id="forgotGo" type="button">Apagar perfil</button></div>';return}
   if(b.id==='forgotGo'){const p=act();if(p&&$('#forgotName').value.trim().toLowerCase()===p.nome.trim().toLowerCase()){await delProfile(p.id);toast('Perfil apagado')}else toast('O nome não confere.')}
 });
+
+
+/* ---------- backup (modo local) + app Android ---------- */
+function bkHtml(){
+  if(D.mode!=='local')return '';
+  return `<div class="bk"><p class="sub">Neste aparelho os dados ficam só aqui. Faça um backup de vez em quando para não perder nada.</p><div class="row2">${PR.length?'<button class="btn" type="button" id="bkExp">Exportar backup</button>':''}<button class="btn" type="button" id="bkImp">Importar backup</button></div></div>`;
+}
+async function bkExport(){
+  saveLocal();
+  const data=JSON.stringify({app:'centro-de-comando',v:1,perfis:PR});
+  const name='backup-financas-'+new Date().toISOString().slice(0,10)+'.json';
+  const P=window.Capacitor&&window.Capacitor.Plugins;
+  try{
+    if(P&&P.Filesystem&&P.Share){
+      const r=await P.Filesystem.writeFile({path:name,data:data,directory:'CACHE',encoding:'utf8'});
+      await P.Share.share({title:'Backup Finanças',url:r.uri,dialogTitle:'Salvar backup'});return;
+    }
+    if(typeof DL!=='undefined'&&DL){await DL.save({filename:name,data});return}
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=name;document.body.appendChild(a);a.click();a.remove();
+  }catch(e){if(!/cancel|dismiss/i.test(String((e&&e.message)||e)))toast('Não consegui exportar.')}
+}
+function bkImport(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';
+  inp.onchange=async()=>{
+    const f=inp.files&&inp.files[0];if(!f)return;
+    try{
+      const j=JSON.parse(await f.text());
+      if(!j||!Array.isArray(j.perfis)||!j.perfis.length)throw 0;
+      let n=0;
+      for(const p of j.perfis){
+        if(!p||!p.nome)continue;
+        const q={...p,items:(p.items||[]).map(norm),deps:p.deps||[],dividas:p.dividas||[]};
+        if(PR.some(x=>x.id===q.id)){q.id=uid();q.nome=q.nome+' (backup)'}
+        q.ord=Math.max(0,...PR.map(x=>x.ord||0))+1;PR.push(q);n++;
+      }
+      if(!n)throw 0;
+      saveLocal();UI.pm=null;PRREADY=true;gateSig='';
+      if(ACTIVE&&prof(ACTIVE)){render();renderManage()}else pickInitial();
+      toast(n+' perfil(is) importado(s)');
+    }catch(e){toast('Arquivo de backup inválido.')}
+  };
+  inp.click();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('#bkExp,#bkImp');if(!b)return;if(b.id==='bkExp')bkExport();else bkImport()});
+(function(){
+  const C=window.Capacitor;if(!C||!C.isNativePlatform||!C.isNativePlatform())return;
+  document.addEventListener('focusin',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))setTimeout(()=>{try{e.target.scrollIntoView({block:'center',behavior:'smooth'})}catch(_){}},350)});
+  const A=C.Plugins&&C.Plugins.App;
+  if(A&&A.addListener)A.addListener('backButton',()=>{
+    if(UI.pm){UI.pm=null;renderManage();return}
+    if(UI.sim){const x=$('#simExit');if(x){x.click();return}}
+    A.exitApp();
+  });
+})();
 
 /* ---------- inicialização ---------- */
 function pickInitial(){
